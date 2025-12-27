@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ResumeData } from '@/types/resume';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Plus, Trash2, Upload } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { parseResumeText, mergeResumeData, readFileAsText } from '@/utils/resumeParser';
 
 interface ResumeEditorProps {
   data: ResumeData;
@@ -15,6 +16,7 @@ interface ResumeEditorProps {
 
 const ResumeEditor: React.FC<ResumeEditorProps> = ({ data, onChange }) => {
   const { toast } = useToast();
+  const [isParsingFile, setIsParsingFile] = useState(false);
 
   const updateHeader = (field: keyof ResumeData['header'], value: string) => {
     onChange({
@@ -163,13 +165,48 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({ data, onChange }) => {
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    setIsParsingFile(true);
+    
+    try {
+      // Read file content
+      const text = await readFileAsText(file);
+      
+      if (!text.trim()) {
+        toast({
+          title: 'Empty file',
+          description: 'The uploaded file appears to be empty.',
+          variant: 'destructive',
+        });
+        setIsParsingFile(false);
+        return;
+      }
+
+      // Parse the resume text
+      const parsedData = parseResumeText(text);
+      
+      // Merge with existing data
+      const mergedData = mergeResumeData(data, parsedData);
+      onChange(mergedData);
+      
       toast({
-        title: 'Resume uploaded!',
-        description: 'Your resume has been uploaded. You can now edit the details.',
+        title: 'Resume imported!',
+        description: 'Your resume has been parsed. Review and edit the details below.',
       });
+    } catch (error) {
+      console.error('Error parsing resume:', error);
+      toast({
+        title: 'Error parsing resume',
+        description: 'Could not parse the file. Please try a different format or enter details manually.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsParsingFile(false);
+      // Reset input
+      e.target.value = '';
     }
   };
 
@@ -177,17 +214,30 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({ data, onChange }) => {
     <div className="space-y-6 pb-8">
       {/* Upload Resume */}
       <Card className="p-4 border-dashed border-2 border-primary/30 bg-pastel-green/30">
-        <label className="flex flex-col items-center cursor-pointer py-4">
-          <Upload className="w-8 h-8 text-primary mb-2" />
-          <span className="text-sm font-medium text-foreground">Upload existing resume</span>
-          <span className="text-xs text-muted-foreground">PDF, DOC, or DOCX</span>
+        <label className={`flex flex-col items-center cursor-pointer py-4 ${isParsingFile ? 'opacity-50 pointer-events-none' : ''}`}>
+          {isParsingFile ? (
+            <Loader2 className="w-8 h-8 text-primary mb-2 animate-spin" />
+          ) : (
+            <Upload className="w-8 h-8 text-primary mb-2" />
+          )}
+          <span className="text-sm font-medium text-foreground">
+            {isParsingFile ? 'Parsing resume...' : 'Upload existing resume'}
+          </span>
+          <span className="text-xs text-muted-foreground">TXT or plain text file - content will be parsed and editable</span>
           <input
             type="file"
-            accept=".pdf,.doc,.docx"
+            accept=".txt,.text"
             onChange={handleFileUpload}
             className="hidden"
+            disabled={isParsingFile}
           />
         </label>
+        <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded-lg">
+          <FileText className="w-4 h-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">
+            Tip: Copy your resume text into a .txt file for best results
+          </span>
+        </div>
       </Card>
 
       {/* Header Section */}
